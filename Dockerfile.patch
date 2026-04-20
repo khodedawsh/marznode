@@ -1,0 +1,12 @@
+# Overlay patch on top of dawsh/marznode (sing-box 1.11.3 already inside).
+# Avoids rebuilding from scratch — only copies patched Python files over the base image.
+# Upstream build (Dockerfile) pulls jklolixxs/sing-box:latest which is no longer publicly available.
+
+FROM dawsh/marznode@sha256:64734e9a0a075cd4da590765ed11f86c564ba311a339dab72b0976438104adab
+
+# Patched files implementing xtls-rprx-vision flow for VLESS-REALITY in sing-box backend
+# + sing-box config pre-check on start (fail-fast instead of crash-loop on invalid JSON).
+COPY marznode/backends/singbox/_config.py /app/marznode/backends/singbox/_config.py
+COPY marznode/backends/singbox/_runner.py /app/marznode/backends/singbox/_runner.py
+
+# Keep original CMD / entrypoint from base image.
