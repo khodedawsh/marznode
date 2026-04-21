@@ -1,11 +1,57 @@
-# Overlay patch on top of dawsh/marznode (sing-box 1.11.3 already inside).
-# Avoids rebuilding from scratch — only copies patched Python files over the base image.
-# Upstream build (Dockerfile) pulls jklolixxs/sing-box:latest which is no longer publicly available.
+# Multi-stage build: patched marznode with sing-box v1.13.9.
+#
+# Stage 1 builds sing-box from source because the official
+# ghcr.io/sagernet/sing-box:v1.13.9 image ships without the
+# `with_v2ray_api` and `with_grpc` tags — marznode needs the former for
+# user-traffic stats (FetchUsersStats) and the latter for v2ray grpc
+# transports. The base image dawsh/marznode:latest carries sing-box
+# 1.11.3, which is incompatible with recent Xray-core REALITY clients
+# ("REALITY: processed invalid connection" / client [EOF] right after
+# the TLS handshake).
+#
+# Tag changes between 1.11.3 and 1.13.9:
+#   - `with_reality_server` merged into `with_utls` — not passed explicitly.
+#   - `with_ech`            deprecated (migrated to stdlib) — dropped.
+# Everything else is kept at parity with dawsh/marznode's default set.
 
+FROM golang:1.25-alpine AS singbox-builder
+
+ARG SING_BOX_VERSION=v1.13.9
+# Tag parity with dawsh/marznode's sing-box 1.11.3 build, minus tags that
+# became implicit in 1.13.x (with_reality_server → with_utls, with_ech →
+# stdlib). `with_musl` mirrors the official alpine-based release.
+ARG SING_BOX_TAGS="with_gvisor,with_quic,with_grpc,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_v2ray_api,with_musl,badlinkname,tfogo_checklinkname0"
+
+RUN apk add --no-cache git
+
+RUN git clone --depth 1 --branch "${SING_BOX_VERSION}" \
+        https://github.com/SagerNet/sing-box.git /src
+WORKDIR /src
+
+# -checklinkname=0 / -X internal/godebug.defaultGODEBUG=multipathtcp=0
+# mirror release/LDFLAGS from upstream. Without -checklinkname=0 Go 1.23+
+# rejects sing-box's linkname hooks into crypto/tls internals ("invalid
+# reference to handlePostHandshakeMessage"). GOTOOLCHAIN=local pins us to
+# the image's Go (go.mod may request a newer patch version).
+RUN GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath \
+        -ldflags "-s -w -buildid= -checklinkname=0 -X internal/godebug.defaultGODEBUG=multipathtcp=0 -X github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION}" \
+        -tags "${SING_BOX_TAGS}" \
+        -o /out/sing-box \
+        ./cmd/sing-box
+
+# Sanity-check that the produced binary has all the tags we asked for.
+RUN /out/sing-box version
+
+# ---
+
+# Stage 2: overlay on top of dawsh/marznode (Python + base sing-box),
+# replace the 1.11.3 binary with our 1.13.9 build, and copy the patched
+# Python files (VLESS xtls-rprx-vision flow for sing-box backend +
+# sing-box config pre-check on start).
 FROM dawsh/marznode@sha256:64734e9a0a075cd4da590765ed11f86c564ba311a339dab72b0976438104adab
 
-# Patched files implementing xtls-rprx-vision flow for VLESS-REALITY in sing-box backend
-# + sing-box config pre-check on start (fail-fast instead of crash-loop on invalid JSON).
+COPY --from=singbox-builder /out/sing-box /usr/local/bin/sing-box
+
 COPY marznode/backends/singbox/_config.py /app/marznode/backends/singbox/_config.py
 COPY marznode/backends/singbox/_runner.py /app/marznode/backends/singbox/_runner.py
 
