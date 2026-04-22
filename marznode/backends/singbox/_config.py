@@ -82,8 +82,11 @@ class SingBoxConfig(dict):
 
                     settings["sid"] = inbound["tls"]["reality"].get("short_id", [""])[0]
 
-            # For VLESS+REALITY over raw TCP, sing-box supports xtls-rprx-vision.
-            # Mirrors marznode PR #30 behavior for the xray backend.
+            # VLESS-REALITY over raw TCP: expose xtls-rprx-vision as the
+            # default flow so users inherit it via append_user(). Mirrors the
+            # xray backend fix from marznode#30 — without this, modern clients
+            # (xray-core, v2rayN, NekoBox) default to vision and get rejected
+            # by sagernet/sing-vmess on "flow mismatch".
             if (
                 inbound["type"] == "vless"
                 and settings["tls"] == "reality"
@@ -122,14 +125,11 @@ class SingBoxConfig(dict):
     def append_user(self, user: User, inbound: Inbound):
         identifier = str(user.id) + "." + user.username
         kwargs = {"identifier": identifier, "seed": user.key}
-        # For VLESS inbounds that advertise a flow (e.g. xtls-rprx-vision for
-        # REALITY), propagate it to the account so sing-box registers the user
-        # with a matching flow; otherwise the client handshake is rejected with
-        # "flow mismatch" by sagernet/sing-vmess vless/service.go.
-        if inbound.protocol == "vless":
-            cfg = inbound.config if isinstance(inbound.config, dict) else {}
-            if flow := cfg.get("flow"):
-                kwargs["flow"] = flow
+        # Propagate VLESS flow (e.g. xtls-rprx-vision for REALITY) to the
+        # account so sing-box registers the user with a matching flow —
+        # otherwise the client handshake is rejected with "flow mismatch".
+        if inbound.protocol == "vless" and (flow := inbound.config.get("flow")):
+            kwargs["flow"] = flow
         account = accounts_map[inbound.protocol](**kwargs)
         for i in self.get("inbounds", []):
             if i.get("tag") == inbound.tag:
