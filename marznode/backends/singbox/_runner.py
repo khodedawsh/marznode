@@ -31,9 +31,25 @@ class SingBoxRunner:
         self._logs_task = None
         atexit.register(lambda: self.stop() if self.running else None)
 
+    async def _validate_config(self, config_path: str):
+        """Run `sing-box check` before starting — fail fast with a clear error
+        instead of a silent crash-loop on invalid configs."""
+        proc = await asyncio.create_subprocess_exec(
+            self.executable_path, "check", "-c", config_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace").strip()
+            logger.error("sing-box config validation failed: %s", err)
+            raise RuntimeError(f"invalid sing-box config: {err}")
+
     async def start(self, config_path: str):
         if self.running is True:
             raise RuntimeError("Sing-box is started already")
+
+        await self._validate_config(config_path)
 
         cmd = [self.executable_path, "run", "--disable-color", "-c", config_path]
         self._process = await asyncio.create_subprocess_shell(
@@ -62,9 +78,13 @@ class SingBoxRunner:
         try:
             self.restarting = True
             logger.warning("Restarting sing-box")
-            self.stop()
-            await self._logs_task
-            await self.start(config_path)
+            await self.stop()
+            if self._logs_task:
+                await self._logs_task
+            try:
+                await self.start(config_path)
+            except RuntimeError as e:
+                logger.error("Failed to start sing-box during restart: %s", e)
         finally:
             self.restarting = False
 

@@ -66,7 +66,7 @@ class SingBoxConfig(dict):
                 "host": [],
                 "path": None,
                 "header_type": None,
-                "flow": None,
+                "flow": inbound.get("flow"),
             }
 
             if "tls" in inbound and inbound["tls"].get("enabled") == True:
@@ -81,6 +81,7 @@ class SingBoxConfig(dict):
                     settings["pbk"] = x25519["public_key"]
 
                     settings["sid"] = inbound["tls"]["reality"].get("short_id", [""])[0]
+
 
             if "transport" in inbound:
                 settings["network"] = inbound["transport"].get("type")
@@ -112,7 +113,13 @@ class SingBoxConfig(dict):
 
     def append_user(self, user: User, inbound: Inbound):
         identifier = str(user.id) + "." + user.username
-        account = accounts_map[inbound.protocol](identifier=identifier, seed=user.key)
+        kwargs = {"identifier": identifier, "seed": user.key}
+        # Propagate VLESS flow (e.g. xtls-rprx-vision for REALITY) to the
+        # account so sing-box registers the user with a matching flow —
+        # otherwise the client handshake is rejected with "flow mismatch".
+        if inbound.protocol == "vless" and (flow := inbound.config.get("flow")):
+            kwargs["flow"] = flow
+        account = accounts_map[inbound.protocol](**kwargs)
         for i in self.get("inbounds", []):
             if i.get("tag") == inbound.tag:
                 if not i.get("users"):
