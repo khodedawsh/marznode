@@ -78,9 +78,13 @@ class SingBoxRunner:
         try:
             self.restarting = True
             logger.warning("Restarting sing-box")
-            self.stop()
-            await self._logs_task
-            await self.start(config_path)
+            await self.stop()
+            if self._logs_task:
+                await self._logs_task
+            try:
+                await self.start(config_path)
+            except RuntimeError as e:
+                logger.error("Failed to start sing-box during restart: %s", e)
         finally:
             self.restarting = False
 
