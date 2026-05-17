@@ -66,7 +66,7 @@ class SingBoxConfig(dict):
                 "host": [],
                 "path": None,
                 "header_type": None,
-                "flow": None,
+                "flow": inbound.get("flow"),
             }
 
             if "tls" in inbound and inbound["tls"].get("enabled") == True:
@@ -82,17 +82,6 @@ class SingBoxConfig(dict):
 
                     settings["sid"] = inbound["tls"]["reality"].get("short_id", [""])[0]
 
-            # VLESS-REALITY over raw TCP: expose xtls-rprx-vision as the
-            # default flow so users inherit it via append_user(). Mirrors the
-            # xray backend fix from marznode#30 — without this, modern clients
-            # (xray-core, v2rayN, NekoBox) default to vision and get rejected
-            # by sagernet/sing-vmess on "flow mismatch".
-            if (
-                inbound["type"] == "vless"
-                and settings["tls"] == "reality"
-                and not inbound.get("transport")
-            ):
-                settings["flow"] = "xtls-rprx-vision"
 
             if "transport" in inbound:
                 settings["network"] = inbound["transport"].get("type")

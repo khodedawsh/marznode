@@ -3,7 +3,7 @@ from collections import defaultdict
 
 import commentjson
 
-from marznode.config import XRAY_EXECUTABLE_PATH, XRAY_VLESS_REALITY_FLOW, DEBUG
+from marznode.config import XRAY_EXECUTABLE_PATH, DEBUG
 from ._utils import get_x25519
 from ...models import Inbound
 from ...storage import BaseStorage
@@ -124,7 +124,7 @@ class XrayConfig(dict):
                 "host": [],
                 "path": None,
                 "header_type": None,
-                "flow": None,
+                "flow": inbound.get("flow"),
                 "is_fallback": False,
             }
 
@@ -145,8 +145,6 @@ class XrayConfig(dict):
                     settings["fp"] = "chrome"
                     settings["tls"] = "reality"
                     settings["sni"] = tls_settings.get("serverNames", [])
-                    if inbound["protocol"] == "vless" and transport_map[net] == "tcp":
-                        settings["flow"] = XRAY_VLESS_REALITY_FLOW
 
                     pvk = tls_settings.get("privateKey")
 
