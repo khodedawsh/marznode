@@ -33,7 +33,7 @@ def get_x25519(xray_path: str, private_key: str = None) -> Dict[str, str] | None
     output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode("utf-8")
 
     # Try New Format (v25.8.3+): Looks for "Password:" instead of Public Key
-    match_new = re.match(r"PrivateKey:\s*(.+)\nPassword:\s*(.+)", output)
+    match_new = re.match(r"PrivateKey:\s*(.+)\nPassword \(PublicKey\):\s*(.+)", output)
     if match_new:
         private, public = match_new.groups()
         return {"private_key": private, "public_key": public}
