@@ -40,7 +40,12 @@ RUN GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath \
         ./cmd/sing-box
 
 # Sanity-check that the produced binary has all the tags we asked for.
-RUN /out/sing-box version
+ RUN version_output="$("/out/sing-box" version)" \
+         && printf '%s\n' "${version_output}" \
+         && for tag in $(printf '%s' "${SING_BOX_TAGS}" | tr ',' ' '); do \
+              printf '%s\n' "${version_output}" | grep -F -q -- "${tag}" \
+                || { echo "missing build tag in /out/sing-box: ${tag}" >&2; exit 1; }; \
+            done
 
 # ---
 
