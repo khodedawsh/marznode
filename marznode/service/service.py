@@ -3,6 +3,7 @@ The grpc Service to add/update/delete users
 Right now it only supports Xray but that is subject to change
 """
 
+import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -40,6 +41,9 @@ class MarzService(MarzServiceBase):
     def __init__(self, storage: BaseStorage, backends: dict[str, VPNBackend]):
         self._backends = backends
         self._storage = storage
+        # Serialize RepopulateUsers so parallel panel streams cannot race
+        # against the same xray user table.
+        self._repopulate_lock = asyncio.Lock()
 
     def _resolve_tag(self, inbound_tag: str) -> VPNBackend:
         for backend in self._backends.values():
@@ -125,15 +129,18 @@ class MarzService(MarzServiceBase):
         self,
         stream: Stream[UsersData, Empty],
     ) -> None:
-        users_data = (await stream.recv_message()).users_data
-        for user_data in users_data:
-            await self._update_user(user_data)
-        user_ids = {user_data.user.id for user_data in users_data}
-        for storage_user in await self._storage.list_users():
-            if storage_user.id not in user_ids:
-                await self._remove_user(storage_user, storage_user.inbounds)
-                await self._storage.remove_user(storage_user)
-        await stream.send_message(Empty())
+        # Hold the lock across the whole iteration so concurrent panel streams
+        # cannot interleave updates/removals against the same xray user table.
+        async with self._repopulate_lock:
+            users_data = (await stream.recv_message()).users_data
+            for user_data in users_data:
+                await self._update_user(user_data)
+            user_ids = {user_data.user.id for user_data in users_data}
+            for storage_user in await self._storage.list_users():
+                if storage_user.id not in user_ids:
+                    await self._remove_user(storage_user, storage_user.inbounds)
+                    await self._storage.remove_user(storage_user)
+            await stream.send_message(Empty())
 
     async def FetchUsersStats(self, stream: Stream[Empty, UsersStats]) -> None:
         await stream.recv_message()
