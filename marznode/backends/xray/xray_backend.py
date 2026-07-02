@@ -130,7 +130,13 @@ class XrayBackend(VPNBackend):
 
         try:
             await self._api.add_inbound_user(inbound.tag, user_account)
-        except (EmailExistsError, TagNotFoundError):
+        except EmailExistsError:
+            # Idempotent add: the user is already present in this inbound (e.g.
+            # a concurrent RepopulateUsers stream added it first). Treat as a
+            # no-op instead of propagating, which would abort the whole
+            # add/repopulate iteration and drop the remaining users.
+            logger.debug("user %s already in inbound %s, skipping", email, inbound.tag)
+        except TagNotFoundError:
             raise
         except OSError:
             logger.warning("user addition requested when xray api is down")
